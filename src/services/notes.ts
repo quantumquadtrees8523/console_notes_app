@@ -161,7 +161,7 @@ function createNewNote(params: NoteParams): {
     const parentNote = getAndValidateParent(params);
 
     if (params.title === null || params.title === undefined) {
-        params.title = getNewNoteTitle(parentNote);
+        params.title = ''
     }
 
     if (params.content === null || params.content === undefined) {
