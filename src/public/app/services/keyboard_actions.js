@@ -37,6 +37,17 @@ async function setupActionsForElement(scope, $el, component) {
 }
 
 getActionsForScope("window").then(actions => {
+    $(document).on('keydown', (e) => {
+        if (e.metaKey || e.ctrlKey) {
+            switch (e.key.toLowerCase()) {
+                case 's': // CMD/CTRL + S
+                case 'n': // CMD/CTRL + N
+                    e.preventDefault();
+                    return false;
+            }
+        }
+    });
+
 	for (const action of actions) {
 		for (const shortcut of action.effectiveShortcuts) {
 			shortcutService.bindGlobalShortcut(shortcut, () => appContext.triggerCommand(action.actionName, {ntxId: appContext.tabManager.activeNtxId}));
