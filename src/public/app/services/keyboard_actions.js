@@ -1,6 +1,7 @@
 import server from "./server.js";
 import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
+import geminiService from "./gemini.js";
 
 const keyboardActionRepo = {};
 
@@ -36,24 +37,81 @@ async function setupActionsForElement(scope, $el, component) {
 	}
 }
 
-getActionsForScope("window").then(actions => {
-    $(document).on('keydown', (e) => {
+(async () => {
+    const actions = await getActionsForScope("window");
+
+    $(document).on('keydown', async (e) => {
         if (e.metaKey || e.ctrlKey) {
             switch (e.key.toLowerCase()) {
                 case 's': // CMD/CTRL + S
                 case 'n': // CMD/CTRL + N
                     e.preventDefault();
                     return false;
+				case 'l': // CMD/CTRL + L
+                    const activeContext = appContext.tabManager.getActiveContext();
+                    if (activeContext) {
+                        await activeContext.getTextEditor(async editor => {
+                            const selection = editor.model.document.selection;
+                            const range = selection.getFirstRange();
+                            const user_command = prompt("Edit selection with AI: ");
+                            
+                            if (!selection.isCollapsed) {
+                                const selectedText = Array.from(range.getItems())
+                                    .map(item => item.data || '')
+                                    .join('');
+                                
+                                editor.model.change(writer => {
+                                    writer.remove(range);
+                                });
+                                
+                                const position = selection.getFirstPosition();
+                                let currentPosition = position;
+
+								const model_command = user_command + ": " + selectedText;
+								console.log(model_command);
+                                const stream = await geminiService.streamGenerateContent(model_command);
+                                const reader = stream.getReader();
+								let buffer = '';
+                
+								try {
+									while (true) {
+										const {done, value} = await reader.read();
+										if (done) break;
+										// Decode the chunk and add to buffer
+										const chunk = new TextDecoder().decode(value);
+										const cleanChunk = chunk
+											.replace(/^-+$/gm, '')     // Remove separator lines
+											.replace(/^\[/, '')        // Remove leading [
+											.replace(/\]$/, '')        // Remove trailing ]
+											.replace(/^,\s*/, '');     // Remove leading comma and whitespace
+										const chunkJSON = JSON.parse(cleanChunk);
+										const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+										if (chunkText) {
+											buffer += chunkText;
+										}
+										editor.model.change(writer => {
+											writer.insertText(chunkText, currentPosition);
+											currentPosition = currentPosition.getShiftedBy(chunkText.length); // Update position
+										});
+									}
+								} catch (error) {
+									console.error('Streaming error:', error);
+								}
+                            }
+                        });
+                    }
+                    e.preventDefault();
+                    return false;
             }
         }
     });
 
-	for (const action of actions) {
-		for (const shortcut of action.effectiveShortcuts) {
-			shortcutService.bindGlobalShortcut(shortcut, () => appContext.triggerCommand(action.actionName, {ntxId: appContext.tabManager.activeNtxId}));
-		}
-	}
-});
+    for (const action of actions) {
+        for (const shortcut of action.effectiveShortcuts) {
+            shortcutService.bindGlobalShortcut(shortcut, () => appContext.triggerCommand(action.actionName, {ntxId: appContext.tabManager.activeNtxId}));
+        }
+    }
+})();
 
 async function getAction(actionName, silent = false) {
 	await keyboardActionsLoaded;
