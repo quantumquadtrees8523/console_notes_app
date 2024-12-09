@@ -28,10 +28,15 @@ function index(req: Request, res: Response) {
     // The page is restored from cache, but the API call fail.
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 
+    const isElectron = utils.isElectron();
     res.render(view, {
         csrfToken: csrfToken,
         themeCssUrl: getThemeCssUrl(options.theme),
         headingStyle: options.headingStyle,
+        layoutOrientation: options.layoutOrientation,
+        platform: process.platform,
+        isElectron,
+        hasNativeTitleBar: (isElectron && options.nativeTitleBarVisible === "true"),
         mainFontSize: parseInt(options.mainFontSize),
         treeFontSize: parseInt(options.treeFontSize),
         detailFontSize: parseInt(options.detailFontSize),

@@ -93,7 +93,7 @@
     "export_note_title": "Export note",
     "close": "Close",
     "export_type_subtree": "this note and all of its descendants",
-    "format_html": "HTML - recomandat deoarece păstrează toată formatarea",
+    "format_html": "HTML - recommended as it keeps all format",
     "format_html_zip": "HTML in ZIP archive - this is recommended since this preserves all the formatting.",
     "format_markdown": "Markdown - this preserves most of the formatting.",
     "format_opml": "OPML - outliner interchange format for text only. Formatting, images and files are not included.",
@@ -1434,7 +1434,7 @@
     "saved-search-note-refreshed": "Saved search note refreshed."
   },
   "title_bar_buttons": {
-    "window-on-top": "Keep this window on top."
+    "window-on-top": "Keep Window on Top"
   },
   "note_detail": {
     "could_not_find_typewidget": "Could not find typeWidget for type '{{type}}'"
