@@ -3,6 +3,7 @@ import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
 import geminiService from "./gemini.js";
 
+
 const keyboardActionRepo = {};
 
 const keyboardActionsLoaded = server.get('keyboard-actions').then(actions => {
@@ -47,7 +48,7 @@ async function setupActionsForElement(scope, $el, component) {
                 case 'n': // CMD/CTRL + N
                     e.preventDefault();
                     return false;
-				case 'l': // CMD/CTRL + L
+                case 'l': // CMD/CTRL + L
                     const activeContext = appContext.tabManager.getActiveContext();
                     if (activeContext) {
                         await activeContext.getTextEditor(async editor => {
@@ -55,48 +56,67 @@ async function setupActionsForElement(scope, $el, component) {
                             const range = selection.getFirstRange();
                             const user_command = prompt("Edit selection with AI: ");
                             
+                            if (!user_command) {
+                                return;
+                            }
+
+                            let model_command = user_command;
+                            
                             if (!selection.isCollapsed) {
                                 const selectedText = Array.from(range.getItems())
                                     .map(item => item.data || '')
                                     .join('');
                                 
-                                editor.model.change(writer => {
-                                    writer.remove(range);
-                                });
-                                
-                                const position = selection.getFirstPosition();
-                                let currentPosition = position;
+                                model_command += ": " + selectedText;
+                            }
 
-								const model_command = user_command + ": " + selectedText;
-								console.log(model_command);
-                                const stream = await geminiService.streamGenerateContent(model_command);
-                                const reader = stream.getReader();
-								let buffer = '';
-                
-								try {
-									while (true) {
-										const {done, value} = await reader.read();
-										if (done) break;
-										// Decode the chunk and add to buffer
-										const chunk = new TextDecoder().decode(value);
-										const cleanChunk = chunk
-											.replace(/^-+$/gm, '')     // Remove separator lines
-											.replace(/^\[/, '')        // Remove leading [
-											.replace(/\]$/, '')        // Remove trailing ]
-											.replace(/^,\s*/, '');     // Remove leading comma and whitespace
-										const chunkJSON = JSON.parse(cleanChunk);
-										const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
-										if (chunkText) {
-											buffer += chunkText;
-										}
-										editor.model.change(writer => {
-											writer.insertText(chunkText, currentPosition);
-											currentPosition = currentPosition.getShiftedBy(chunkText.length); // Update position
-										});
-									}
-								} catch (error) {
-									console.error('Streaming error:', error);
-								}
+                            const stream = await geminiService.streamGenerateContent(model_command);
+                            const reader = stream.getReader();
+                            
+                            // Store the complete response before updating editor
+                            let completeResponse = '';
+            
+                            try {
+                                while (true) {
+                                    const {done, value} = await reader.read();
+                                    if (done) break;
+                                    
+                                    const chunk = new TextDecoder().decode(value);
+                                    const cleanChunk = chunk
+                                        .replace(/^-+$/gm, '')     
+                                        .replace(/^\[/, '')        
+                                        .replace(/\]$/, '')        
+                                        .replace(/^,\s*/, '');    
+                                    const chunkJSON = JSON.parse(cleanChunk);
+									console.log(chunkJSON);
+                                    const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+                                    
+                                    if (chunkText) {
+                                        completeResponse += chunkText;
+                                        // After streaming is complete, update editor once
+                                        editor.model.change(writer => {
+                                            if (!selection.isCollapsed) {
+                                                // If there's a selection, remove it first
+                                                writer.remove(range);
+                                            }
+                                            
+                                            // Split text by newlines and insert with line breaks
+                                            const position = selection.getFirstPosition();
+                                            const lines = completeResponse.split(/\r?\n/);
+                                            
+                                            for (let i = 0; i < lines.length; i++) {
+                                                const insertPosition = writer.createPositionAt(position);
+                                                writer.insertText(lines[i], insertPosition);
+                                                if (i < lines.length - 1) {
+                                                    writer.insertElement('softBreak', insertPosition);
+                                                }
+                                                position.offset += lines[i].length + (i < lines.length - 1 ? 1 : 0);
+                                            }
+                                        });
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Streaming error:', error);
                             }
                         });
                     }
