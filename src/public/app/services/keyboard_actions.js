@@ -1,6 +1,8 @@
 import server from "./server.js";
 import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
+import geminiService from "./gemini.js";
+
 
 const keyboardActionRepo = {};
 
@@ -36,13 +38,122 @@ async function setupActionsForElement(scope, $el, component) {
 	}
 }
 
-getActionsForScope("window").then(actions => {
-	for (const action of actions) {
-		for (const shortcut of action.effectiveShortcuts) {
-			shortcutService.bindGlobalShortcut(shortcut, () => appContext.triggerCommand(action.actionName, {ntxId: appContext.tabManager.activeNtxId}));
-		}
-	}
-});
+(async () => {
+    const actions = await getActionsForScope("window");
+
+    $(document).on('keydown', async (e) => {
+        if (e.metaKey || e.ctrlKey) {
+            switch (e.key.toLowerCase()) {
+                case 's': // CMD/CTRL + S
+                case 'n': // CMD/CTRL + N
+                    e.preventDefault();
+                    return false;
+                case 'l': // CMD/CTRL + L
+                    const activeContext = appContext.tabManager.getActiveContext();
+                    if (activeContext) {
+                        await activeContext.getTextEditor(async editor => {
+                            const selection = editor.model.document.selection;
+                            const range = selection.getFirstRange();
+                            const user_command = prompt("Edit selection with AI: ");
+                            
+                            if (!user_command) {
+                                return;
+                            }
+
+                            let model_command = user_command;
+                            
+                            if (!selection.isCollapsed) {
+                                const selectedText = Array.from(range.getItems())
+                                    .map(item => item.data || '')
+                                    .join('');
+                                
+                                model_command += ": " + selectedText;
+                            }
+
+                            const stream = await geminiService.streamGenerateContent(model_command);
+                            const reader = stream.getReader();
+                            
+                            // Store the original position where we'll insert text
+                            const insertPosition = selection.getFirstPosition();
+                            
+                            // If there's a selection, remove it first
+                            if (!selection.isCollapsed) {
+                                editor.model.change(writer => {
+                                    writer.remove(range);
+                                });
+                            }
+
+                            let completeResponse = '';
+                            let lastInsertedLength = 0;
+            
+                            try {
+                                while (true) {
+                                    const {done, value} = await reader.read();
+                                    if (done) break;
+                                    
+                                    const chunk = new TextDecoder().decode(value);
+                                    const cleanChunk = chunk
+                                        .replace(/^-+$/gm, '')     
+                                        .replace(/^\[/, '')        
+                                        .replace(/\]$/, '')        
+                                        .replace(/^,\s*/, '');    
+                                    const chunkJSON = JSON.parse(cleanChunk);
+                                    const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+                                    
+                                    if (chunkText) {
+                                        completeResponse += chunkText;
+                                        
+                                        editor.model.change(writer => {
+                                            // Remove previously inserted content
+                                            if (lastInsertedLength > 0) {
+                                                const removeRange = writer.createRange(
+                                                    insertPosition,
+                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + lastInsertedLength)
+                                                );
+                                                writer.remove(removeRange);
+                                            }
+                                            
+                                            // Insert new complete response
+                                            const lines = completeResponse.split(/\r?\n/);
+                                            let currentOffset = 0;
+                                            
+                                            for (let i = 0; i < lines.length; i++) {
+                                                writer.insertText(
+                                                    lines[i], 
+                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
+                                                );
+                                                currentOffset += lines[i].length;
+                                                
+                                                if (i < lines.length - 1) {
+                                                    writer.insertElement(
+                                                        'softBreak',
+                                                        writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
+                                                    );
+                                                    currentOffset += 1;
+                                                }
+                                            }
+                                            
+                                            lastInsertedLength = currentOffset;
+                                        });
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Streaming error:', error);
+                            }
+                        });
+                    }
+                    e.preventDefault();
+                    return false;
+            }
+        }
+    });
+
+    for (const action of actions) {
+        for (const shortcut of action.effectiveShortcuts) {
+            shortcutService.bindGlobalShortcut(shortcut, () => appContext.triggerCommand(action.actionName, {ntxId: appContext.tabManager.activeNtxId}));
+        }
+    }
+})();
 
 async function getAction(actionName, silent = false) {
 	await keyboardActionsLoaded;

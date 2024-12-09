@@ -344,7 +344,6 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
 
     addLinkToTextCommand() {
         const selectedText = this.getSelectedText();
-
         this.triggerCommand('showAddLinkDialog', {textTypeWidget: this, text: selectedText})
     }
 
@@ -432,5 +431,19 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
 
     async refreshIncludedNoteEvent({noteId}) {
         this.refreshIncludedNote(this.$editor, noteId);
+    }
+
+    async replaceSelectedText(newText) {
+        await this.initialized;
+        this.watchdog.editor.model.change(writer => {
+            const selection = this.watchdog.editor.model.document.selection;
+            const range = selection.getFirstRange();
+            
+            if (!selection.isCollapsed) {
+                writer.remove(range);
+                const position = selection.getFirstPosition();
+                writer.insertText(newText, position);
+            }
+        });
     }
 }

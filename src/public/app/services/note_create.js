@@ -10,7 +10,7 @@ import { t } from "./i18n.js";
 async function createNote(parentNotePath, options = {}) {
     options = Object.assign({
         activate: true,
-        focus: 'title',
+        focus: 'content',
         target: 'into'
     }, options);
 
