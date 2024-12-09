@@ -73,8 +73,18 @@ async function setupActionsForElement(scope, $el, component) {
                             const stream = await geminiService.streamGenerateContent(model_command);
                             const reader = stream.getReader();
                             
-                            // Store the complete response before updating editor
+                            // Store the original position where we'll insert text
+                            const insertPosition = selection.getFirstPosition();
+                            
+                            // If there's a selection, remove it first
+                            if (!selection.isCollapsed) {
+                                editor.model.change(writer => {
+                                    writer.remove(range);
+                                });
+                            }
+
                             let completeResponse = '';
+                            let lastInsertedLength = 0;
             
                             try {
                                 while (true) {
@@ -88,30 +98,42 @@ async function setupActionsForElement(scope, $el, component) {
                                         .replace(/\]$/, '')        
                                         .replace(/^,\s*/, '');    
                                     const chunkJSON = JSON.parse(cleanChunk);
-									console.log(chunkJSON);
                                     const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
                                     
                                     if (chunkText) {
                                         completeResponse += chunkText;
-                                        // After streaming is complete, update editor once
+                                        
                                         editor.model.change(writer => {
-                                            if (!selection.isCollapsed) {
-                                                // If there's a selection, remove it first
-                                                writer.remove(range);
+                                            // Remove previously inserted content
+                                            if (lastInsertedLength > 0) {
+                                                const removeRange = writer.createRange(
+                                                    insertPosition,
+                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + lastInsertedLength)
+                                                );
+                                                writer.remove(removeRange);
                                             }
                                             
-                                            // Split text by newlines and insert with line breaks
-                                            const position = selection.getFirstPosition();
+                                            // Insert new complete response
                                             const lines = completeResponse.split(/\r?\n/);
+                                            let currentOffset = 0;
                                             
                                             for (let i = 0; i < lines.length; i++) {
-                                                const insertPosition = writer.createPositionAt(position);
-                                                writer.insertText(lines[i], insertPosition);
+                                                writer.insertText(
+                                                    lines[i], 
+                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
+                                                );
+                                                currentOffset += lines[i].length;
+                                                
                                                 if (i < lines.length - 1) {
-                                                    writer.insertElement('softBreak', insertPosition);
+                                                    writer.insertElement(
+                                                        'softBreak',
+                                                        writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
+                                                    );
+                                                    currentOffset += 1;
                                                 }
-                                                position.offset += lines[i].length + (i < lines.length - 1 ? 1 : 0);
                                             }
+                                            
+                                            lastInsertedLength = currentOffset;
                                         });
                                     }
                                 }
