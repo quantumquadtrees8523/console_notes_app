@@ -118,8 +118,10 @@ async function setupActionsForElement(scope, $el, component) {
                                             let currentOffset = 0;
                                             
                                             for (let i = 0; i < lines.length; i++) {
+												const processedLine = editor.data.processor.toView(lines[i]).getChild(0);
+                                                const viewFragment = editor.data.toModel(processedLine);
                                                 writer.insertText(
-                                                    lines[i], 
+                                                    viewFragment, 
                                                     writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
                                                 );
                                                 currentOffset += lines[i].length;
