@@ -1,7 +1,10 @@
 import server from "./server.js";
 import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
-import geminiService from "./gemini.js";
+import ChatPopup from "../components/chat_popup.js";
+import geminiService from "./llm/gemini.js";
+
+
 
 
 const keyboardActionRepo = {};
@@ -49,100 +52,34 @@ async function setupActionsForElement(scope, $el, component) {
                     e.preventDefault();
                     return false;
                 case 'l': // CMD/CTRL + L
-                    const activeContext = appContext.tabManager.getActiveContext();
-                    if (activeContext) {
-                        await activeContext.getTextEditor(async editor => {
+                    e.preventDefault(); // Prevent default browser behavior first
+                    e.stopPropagation(); // Stop event from bubbling up
+                    const context = appContext.tabManager.getActiveContext();
+                    if (context) {
+                        const chatPopup = new ChatPopup();
+                        const editor = await context.getTextEditor();
+                        let selectedText = '';
+                        if (editor) {
                             const selection = editor.model.document.selection;
-                            const range = selection.getFirstRange();
-                            const user_command = prompt("Edit selection with AI: ");
-                            
-                            if (!user_command) {
-                                return;
-                            }
-
-                            let model_command = user_command;
-                            
                             if (!selection.isCollapsed) {
-                                const selectedText = Array.from(range.getItems())
-                                    .map(item => item.data || '')
-                                    .join('');
-                                
-                                model_command += ": " + selectedText;
+                                selectedText = editor.model.document.getSelectedText();
                             }
+                        }
 
-                            const stream = await geminiService.streamGenerateContent(model_command);
-                            const reader = stream.getReader();
-                            
-                            // Store the original position where we'll insert text
-                            const insertPosition = selection.getFirstPosition();
-                            
-                            // If there's a selection, remove it first
-                            if (!selection.isCollapsed) {
+                        const user_input = await chatPopup.show(`Edit with AI: ${selectedText ? `\n\nSelected Text: ${selectedText}` : ''}`);
+                        if (user_input) {
+							geminiService.streamGenerateContent(user_input);
+                            if (editor) {
+                                console.log('editor.model:', editor.model);
+                                console.log('editor.model.document:', editor.model.document);
+                                console.log('editor.model.document.selection:', editor.model.document.selection);
                                 editor.model.change(writer => {
-                                    writer.remove(range);
+                                    console.log('writer:', writer);
+                                    writer.insertText(text, editor.model.document.selection.getFirstPosition());
                                 });
                             }
-
-                            let completeResponse = '';
-                            let lastInsertedLength = 0;
-            
-                            try {
-                                while (true) {
-                                    const {done, value} = await reader.read();
-                                    if (done) break;
-                                    
-                                    const chunk = new TextDecoder().decode(value);
-                                    const cleanChunk = chunk
-                                        .replace(/^-+$/gm, '')     
-                                        .replace(/^\[/, '')        
-                                        .replace(/\]$/, '')        
-                                        .replace(/^,\s*/, '');    
-                                    const chunkJSON = JSON.parse(cleanChunk);
-                                    const chunkText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
-                                    
-                                    if (chunkText) {
-                                        completeResponse += chunkText;
-                                        
-                                        editor.model.change(writer => {
-                                            // Remove previously inserted content
-                                            if (lastInsertedLength > 0) {
-                                                const removeRange = writer.createRange(
-                                                    insertPosition,
-                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + lastInsertedLength)
-                                                );
-                                                writer.remove(removeRange);
-                                            }
-                                            
-                                            // Insert new complete response
-                                            const lines = completeResponse.split(/\r?\n/);
-                                            let currentOffset = 0;
-                                            
-                                            for (let i = 0; i < lines.length; i++) {
-                                                writer.insertText(
-                                                    lines[i], 
-                                                    writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
-                                                );
-                                                currentOffset += lines[i].length;
-                                                
-                                                if (i < lines.length - 1) {
-                                                    writer.insertElement(
-                                                        'softBreak',
-                                                        writer.createPositionAt(insertPosition.parent, insertPosition.offset + currentOffset)
-                                                    );
-                                                    currentOffset += 1;
-                                                }
-                                            }
-                                            
-                                            lastInsertedLength = currentOffset;
-                                        });
-                                    }
-                                }
-                            } catch (error) {
-                                console.error('Streaming error:', error);
-                            }
-                        });
+                        }
                     }
-                    e.preventDefault();
                     return false;
             }
         }
