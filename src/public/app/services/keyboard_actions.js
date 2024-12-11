@@ -3,6 +3,7 @@ import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
 import ChatPopup from "../components/chat_popup.js";
 import geminiService from "./llm/gemini.js";
+import { getEditSelectedTextPrompt, getInsertTextPrompt, NOTE_EDITOR_SYSTEM_PROMPT } from "./llm/prompts.js";
 
 
 
@@ -60,25 +61,47 @@ async function setupActionsForElement(scope, $el, component) {
                         const editor = await context.getTextEditor();
                         let selectedText = '';
                         if (editor) {
+							let user_prompt = await chatPopup.show(`Edit with AI: ${selectedText ? `\n\nSelected Text: ${selectedText}` : ''}`);
+							const note_title = context.note.title;
+							const note_content = await context.note.getContent();
+							console.log(note_title);
+							console.log(note_content);
                             const selection = editor.model.document.selection;
-                            if (!selection.isCollapsed) {
-                                selectedText = editor.model.document.getSelectedText();
-                            }
-                        }
+							if (!selection.isCollapsed) {
+								selectedText = editor.model.document.getSelectedText();
+								user_prompt = getEditSelectedTextPrompt(selectedText, user_prompt, note_title, note_content);
+							} else {
+								user_prompt = getInsertTextPrompt(user_prompt, note_title, note_content)
+							}
 
-                        const user_input = await chatPopup.show(`Edit with AI: ${selectedText ? `\n\nSelected Text: ${selectedText}` : ''}`);
-                        if (user_input) {
-							geminiService.streamGenerateContent(user_input);
-                            if (editor) {
-                                console.log('editor.model:', editor.model);
-                                console.log('editor.model.document:', editor.model.document);
-                                console.log('editor.model.document.selection:', editor.model.document.selection);
-                                editor.model.change(writer => {
-                                    console.log('writer:', writer);
-                                    writer.insertText(text, editor.model.document.selection.getFirstPosition());
-                                });
-                            }
-                        }
+							// Create and iterate over the stream.
+							const stream = await geminiService.streamGenerateContent(NOTE_EDITOR_SYSTEM_PROMPT + user_prompt);
+							const reader = stream.getReader();
+							// let noteText = '';
+							while (true) {
+								const {done, value} = await reader.read();
+								if (done) break;
+								// Parse and clean gemini outputs.
+								const chunk = new TextDecoder().decode(value);
+								const cleanChunk = chunk.replace(/^-+$/gm, '')     
+														.replace(/^\[/, '')
+														.replace(/\]$/, '')        
+														.replace(/^,\s*/, '');    
+								const chunkJSON = JSON.parse(cleanChunk);
+								const streamText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+								// noteText = noteText + chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+								for (const char of streamText) {
+									editor.model.change(writer => {
+										const position = editor.model.document.selection.getFirstPosition();
+										if (char === '\n') {
+											writer.insertElement('softBreak', position);
+										} else {
+											writer.insertText(char, position);
+										}
+									});
+								}
+							}
+						}
                     }
                     return false;
             }
