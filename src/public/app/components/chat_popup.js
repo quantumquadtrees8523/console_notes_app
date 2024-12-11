@@ -5,7 +5,7 @@ const TPL = `
     <div class="modal-dialog" style="opacity: 1; margin-top: 0; max-width: 700px;">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" style="font-size: 1rem;"></h5>
+                <h5 class="modal-title" style="font-size: 0.8rem;"></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="font-size: 0.8rem;"></button>
             </div>
             <div class="modal-body" style="padding: 10px;">
@@ -22,6 +22,7 @@ export default class ChatPopup {
     constructor() {
         this.$widget = $(TPL);
         this.$title = this.$widget.find('.modal-title');
+        this.$subtitle = this.$widget.find('.modal-subtitle');
         this.$textarea = this.$widget.find('textarea');
         this.$selectedTextDisplay = this.$widget.find('.selected-text-display');
         
@@ -29,7 +30,7 @@ export default class ChatPopup {
         this.storageKey = null;
         
         this.$textarea.on('keypress', (e) => {
-            if (e.which === 13) { // Enter key pressed
+            if (e.which === 13 && !e.shiftKey) { // Enter key pressed without Shift
                 e.preventDefault(); // Prevent default behavior of Enter key
                 const value = this.$textarea.val();
                 if (this.storageKey) {
@@ -61,6 +62,7 @@ export default class ChatPopup {
 
     show(title, storageKey = null, selectedText = '') {
         this.$title.text(title);
+        this.$subtitle.text(selectedText); // Display selectedText in the subtitle
         this.storageKey = storageKey;
         
         if (storageKey) {

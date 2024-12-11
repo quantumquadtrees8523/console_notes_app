@@ -71,7 +71,7 @@ async function setupActionsForElement(scope, $el, component) {
 								console.log(selectedText);
 							}
 
-							let user_prompt = await chatPopup.show(`Edit with AI: `);
+							let user_prompt = await chatPopup.show(selectedText ? selectedText : "Write with AI: ", selectedText=selectedText);
 							user_prompt = user_prompt.trim()
 							if (!user_prompt) {
 								// no user prompt means we just terminate.
