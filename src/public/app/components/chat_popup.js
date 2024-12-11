@@ -2,18 +2,17 @@ import utils from "../services/utils.js";
 
 const TPL = `
 <div class="chat-popup modal" tabindex="-1" data-bs-backdrop="false">
-    <div class="modal-dialog" style="opacity: 1; margin-top: 0;">
+    <div class="modal-dialog" style="opacity: 1; margin-top: 0; max-width: 700px;">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" style="font-size: 1rem;"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="font-size: 0.8rem;"></button>
             </div>
-            <div class="modal-body">
-                <textarea class="form-control" rows="3"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary btn-submit">Submit</button>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <div class="modal-body" style="padding: 10px;">
+                <h6 class="modal-subtitle" style="font-size: 0.9rem;"></h6>
+                <div class="selected-text-display" style="margin-bottom: 5px; font-size: 0.8rem;"></div>
+                <textarea class="form-control" style="height: 100px; overflow-y: auto; font-size: 0.8rem;"></textarea>
+                <h6>Enter to submit and Esc to quit</h6>
             </div>
         </div>
     </div>
@@ -24,18 +23,21 @@ export default class ChatPopup {
         this.$widget = $(TPL);
         this.$title = this.$widget.find('.modal-title');
         this.$textarea = this.$widget.find('textarea');
-        this.$submitButton = this.$widget.find('.btn-submit');
+        this.$selectedTextDisplay = this.$widget.find('.selected-text-display');
         
         this.resolve = null;
         this.storageKey = null;
         
-        this.$submitButton.on('click', () => {
-            const value = this.$textarea.val();
-            if (this.storageKey) {
-                sessionStorage.setItem(this.storageKey, value);
+        this.$textarea.on('keypress', (e) => {
+            if (e.which === 13) { // Enter key pressed
+                e.preventDefault(); // Prevent default behavior of Enter key
+                const value = this.$textarea.val();
+                if (this.storageKey) {
+                    sessionStorage.setItem(this.storageKey, value);
+                }
+                this.resolve?.(value);
+                this.hide();
             }
-            this.resolve?.(value);
-            this.hide();
         });
         
         this.$widget.on('shown.bs.modal', () => {
@@ -48,10 +50,16 @@ export default class ChatPopup {
             }
         });
 
+        $(document).on('keydown', (e) => {
+            if (e.key === 'Escape') { // Escape key pressed
+                this.hide();
+            }
+        });
+
         $('body').append(this.$widget);
     }
 
-    show(title, storageKey = null) {
+    show(title, storageKey = null, selectedText = '') {
         this.$title.text(title);
         this.storageKey = storageKey;
         
@@ -61,6 +69,8 @@ export default class ChatPopup {
                 this.$textarea.val(savedText);
             }
         }
+
+        this.$selectedTextDisplay.text(selectedText);
 
         return new Promise(resolve => {
             this.resolve = resolve;
@@ -76,6 +86,7 @@ export default class ChatPopup {
     hide() {
         this.$widget.modal('hide');
         this.$textarea.val('');
+        this.$selectedTextDisplay.text('');
         this.resolve = null;
         this.storageKey = null;
     }

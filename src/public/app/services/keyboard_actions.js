@@ -3,7 +3,7 @@ import appContext from "../components/app_context.js";
 import shortcutService from "./shortcuts.js";
 import ChatPopup from "../components/chat_popup.js";
 import geminiService from "./llm/gemini.js";
-import { getEditSelectedTextPrompt, getInsertTextPrompt, NOTE_EDITOR_SYSTEM_PROMPT } from "./llm/prompts.js";
+import { getEditSelectedTextPrompt, getInsertTextPrompt } from "./llm/prompts.js";
 
 
 
@@ -61,27 +61,35 @@ async function setupActionsForElement(scope, $el, component) {
                         const editor = await context.getTextEditor();
                         let selectedText = '';
                         if (editor) {
-							let user_prompt = await chatPopup.show(`Edit with AI: ${selectedText ? `\n\nSelected Text: ${selectedText}` : ''}`);
 							const note_title = context.note.title;
 							const note_content = await context.note.getContent();
-							console.log(note_title);
-							console.log(note_content);
-                            const selection = editor.model.document.selection;
-							if (!selection.isCollapsed) {
-								selectedText = editor.model.document.getSelectedText();
+                            const range = editor.model.document.selection.getFirstRange();
+							let selectedText = '';
+							if (range) {
+								const range = editor.model.document.selection.getFirstRange();
+								selectedText = Array.from(range.getItems()).map(item => item.data || '').join('');
+								console.log(selectedText);
+							}
+
+							let user_prompt = await chatPopup.show(`Edit with AI: `);
+							user_prompt = user_prompt.trim()
+							if (!user_prompt) {
+								// no user prompt means we just terminate.
+								return false;
+							}
+
+							if (range) {
 								user_prompt = getEditSelectedTextPrompt(selectedText, user_prompt, note_title, note_content);
 							} else {
 								user_prompt = getInsertTextPrompt(user_prompt, note_title, note_content)
 							}
-
 							// Create and iterate over the stream.
-							const stream = await geminiService.streamGenerateContent(NOTE_EDITOR_SYSTEM_PROMPT + user_prompt);
+							const stream = await geminiService.streamGenerateContent(user_prompt);
 							const reader = stream.getReader();
-							// let noteText = '';
 							while (true) {
 								const {done, value} = await reader.read();
 								if (done) break;
-								// Parse and clean gemini outputs.
+								// Parse and clean gemini rpc outputs.
 								const chunk = new TextDecoder().decode(value);
 								const cleanChunk = chunk.replace(/^-+$/gm, '')     
 														.replace(/^\[/, '')
@@ -89,7 +97,14 @@ async function setupActionsForElement(scope, $el, component) {
 														.replace(/^,\s*/, '');    
 								const chunkJSON = JSON.parse(cleanChunk);
 								const streamText = chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
-								// noteText = noteText + chunkJSON.candidates?.[0]?.content?.parts?.[0]?.text;
+
+								if (selectedText !== '') {
+									editor.model.change(writer => {
+										const range = editor.model.document.selection.getFirstRange();
+										writer.remove(range);
+									});
+								}
+
 								for (const char of streamText) {
 									editor.model.change(writer => {
 										const position = editor.model.document.selection.getFirstPosition();
